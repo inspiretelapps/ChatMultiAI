@@ -12,7 +12,6 @@ const getDomainFromUrl = (url: string): string => {
     // Extract base domain for matching
     if (hostname.includes('chatgpt.com')) return 'chatgpt.com'
     if (hostname.includes('grok.com')) return 'grok.com'
-    if (hostname.includes('chat.deepseek.com')) return 'chat.deepseek.com'
     if (hostname.includes('claude.ai')) return 'claude.ai'
     if (hostname.includes('gemini.google.com')) return 'gemini.google.com'
     return hostname

@@ -1,5 +1,5 @@
 import "./globals.css"
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react"
 // import cssText from "data-text:@/globals.css"
 import type { PlasmoCSConfig } from "plasmo"
 import { Moon, Sun, Send, Monitor } from "lucide-react"
@@ -11,8 +11,6 @@ import { Card } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 // 导入AI提供商的图标
 import chatgptLightIcon from "data-base64:~images/chatgpt-light.png"
@@ -23,8 +21,6 @@ import geminiLightIcon from "data-base64:~images/gemini-light.png"
 import geminiDarkIcon from "data-base64:~images/gemini-dark.png"
 import grokLightIcon from "data-base64:~images/grok-light.png"
 import grokDarkIcon from "data-base64:~images/grok-dark.png"
-import deepseekLightIcon from "data-base64:~images/deepseek-light.png"
-import deepseekDarkIcon from "data-base64:~images/deepseek-dark.png"
 
 export const config: PlasmoCSConfig = {
   css: ["font-src: self;"]
@@ -51,8 +47,6 @@ interface AIProvider {
   enabled: boolean
   url: string
   icon: React.ReactNode
-  models: string[]
-  selected: string
 }
 
 const ThemeToggle = () => {
@@ -118,18 +112,16 @@ const ChatMultiAIContent = () => {
     const textColor = isDark ? "text-white-400" : "text-black-400"
     
     switch(providerId) {
-      case "chatgpt": 
-        return <img src={isDark ? chatgptDarkIcon : chatgptLightIcon} className={`h-5 w-5 ${textColor}`} alt="ChatGPT" />
-      case "grok": 
-        return <img src={isDark ? grokDarkIcon : grokLightIcon} className={`h-5 w-5 ${textColor}`} alt="Grok" />
-      case "deepseek": 
-        return <img src={isDark ? deepseekDarkIcon : deepseekLightIcon} className={`h-5 w-5 ${textColor}`} alt="DeepSeek" />
-      case "claude": 
-        return <img src={isDark ? claudeDarkIcon : claudeLightIcon} className={`h-5 w-5 ${textColor}`} alt="Claude" />
-      case "gemini": 
-        return <img src={isDark ? geminiDarkIcon : geminiLightIcon} className={`h-5 w-5 ${textColor}`} alt="Gemini" />
-      default: 
-        return <img src={isDark ? chatgptDarkIcon : chatgptLightIcon} className={`h-5 w-5 ${textColor}`} alt="AI" />
+      case "chatgpt":
+        return <img src={isDark ? chatgptDarkIcon : chatgptLightIcon} className={`h-6 w-6 ${textColor}`} alt="ChatGPT" />
+      case "grok":
+        return <img src={isDark ? grokDarkIcon : grokLightIcon} className={`h-6 w-6 ${textColor}`} alt="Grok" />
+      case "claude":
+        return <img src={isDark ? claudeDarkIcon : claudeLightIcon} className={`h-6 w-6 ${textColor}`} alt="Claude" />
+      case "gemini":
+        return <img src={isDark ? geminiDarkIcon : geminiLightIcon} className={`h-6 w-6 ${textColor}`} alt="Gemini" />
+      default:
+        return <img src={isDark ? chatgptDarkIcon : chatgptLightIcon} className={`h-6 w-6 ${textColor}`} alt="AI" />
     }
   }, [isDark]) // Only re-create when isDark changes
   
@@ -140,45 +132,28 @@ const ChatMultiAIContent = () => {
       name: "ChatGPT",
       enabled: true,
       url: "https://chatgpt.com/",
-      icon: getIconForProvider("chatgpt"),
-      models: ["GPT-4o", "o1","GPT-4.5", "o3-mini-high"],
-      selected: "GPT-4o"
+      icon: getIconForProvider("chatgpt")
     },
     {
       id: "grok",
       name: "Grok",
       enabled: true,
       url: "https://grok.com/",
-      icon: getIconForProvider("grok"),
-      models: ["Grok-2", "Grok-3"],
-      selected: "Grok-3"
+      icon: getIconForProvider("grok")
     },
     {
       id: "gemini",
       name: "Gemini",
       enabled: true,
       url: "https://gemini.google.com/",
-      icon: getIconForProvider("gemini"),
-      models: ["2.0 Flash","2.0 Flash Thinking", "2.5 Pro"],
-      selected: "2.0 Flash"
-    },
-    {
-      id: "deepseek",
-      name: "DeepSeek",
-      enabled: true,
-      url: "https://chat.deepseek.com/",
-      icon: getIconForProvider("deepseek"),
-      models: ["DeepSeek-R1","Search"],
-      selected: "DeepSeek-R1"
+      icon: getIconForProvider("gemini")
     },
     {
       id: "claude",
       name: "Claude",
       enabled: true,
       url: "https://claude.ai/",
-      icon: getIconForProvider("claude"),
-      models: ["Claude 3.7 Sonnet", "Claude 3.5 Haiku"],
-      selected: "Claude 3.7 Sonnet"
+      icon: getIconForProvider("claude")
     }
   ], [getIconForProvider])
   
@@ -211,17 +186,15 @@ const ChatMultiAIContent = () => {
   useEffect(() => {
     // Skip saving if providers is empty (initial state)
     if (providers.length === 0) return
-    
+
     // Serialize providers without the React node icons
     const serializableProviders = providers.map(provider => ({
       id: provider.id,
       name: provider.name,
       enabled: provider.enabled,
-      url: provider.url,
-      models: provider.models,
-      selected: provider.selected
+      url: provider.url
     }))
-    
+
     localStorage.setItem('chatmultiai_providers', JSON.stringify(serializableProviders))
   }, [providers])
   
@@ -231,17 +204,6 @@ const ChatMultiAIContent = () => {
       providers.map((provider) =>
         provider.id === id
           ? { ...provider, enabled: !provider.enabled }
-          : provider
-      )
-    )
-  }
-  
-  // Change selected model for a provider
-  const handleModelChange = (id: string, model: string) => {
-    setProviders(
-      providers.map((provider) =>
-        provider.id === id
-          ? { ...provider, selected: model }
           : provider
       )
     )
@@ -298,15 +260,28 @@ const ChatMultiAIContent = () => {
   }
   
   // Auto-resize textarea when content changes
-  useEffect(() => {
-    if (textareaRef.current) {
-      // Reset height to auto to get the correct scrollHeight
-      textareaRef.current.style.height = 'auto'
+  // Using useLayoutEffect to run synchronously before browser paint (prevents visual flicker)
+  useLayoutEffect(() => {
+    if (!textareaRef.current) return
 
-      if(prompt){
-        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`
-      }
-    }
+    const textarea = textareaRef.current
+    const minHeight = 100
+    const maxHeight = 400
+
+    // Store the current scroll position
+    const scrollTop = textarea.scrollTop
+
+    // Temporarily set height to 0 to get accurate scrollHeight measurement
+    // Using 0 instead of 'auto' gives us the true content height
+    textarea.style.height = '0px'
+    const scrollHeight = textarea.scrollHeight
+
+    // Calculate new height: at least minHeight, at most maxHeight
+    const newHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight))
+    textarea.style.height = `${newHeight}px`
+
+    // Restore scroll position
+    textarea.scrollTop = scrollTop
   }, [prompt])
   
   return (
@@ -322,47 +297,22 @@ const ChatMultiAIContent = () => {
       </div>
 
       <div className="flex-grow overflow-auto p-4">
-        <Accordion type="multiple" defaultValue={[]} className="mb-4">
+        <div className="space-y-2">
           {providers.map((provider) => (
-            <AccordionItem value={provider.id} key={provider.id}>
-              <div className="flex items-center">
-                <Switch
-                  id={`provider-${provider.id}`}
-                  checked={provider.enabled}
-                  onCheckedChange={() => toggleProvider(provider.id)}
-                  className="mr-2 data-[state=checked]:bg-primary"
-                />
-                <AccordionTrigger className="flex-1 py-2">
-                  <div className="flex items-center gap-2">
-                    {provider.icon}
-                    <span className="font-medium">{provider.name}</span>
-                  </div>
-                </AccordionTrigger>
+            <div key={provider.id} className="flex items-center justify-between py-2 px-1">
+              <div className="flex items-center gap-3">
+                {provider.icon}
+                <span className="text-base font-medium">{provider.name}</span>
               </div>
-              <AccordionContent className="p-2 pt-0">
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs text-muted-foreground mb-1">Select model:</p>
-                  <Select
-                    value={provider.selected}
-                    onValueChange={(value) => handleModelChange(provider.id, value)}
-                    disabled={!provider.enabled}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {provider.models.map((model) => (
-                        <SelectItem key={model} value={model}>
-                          {model}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+              <Switch
+                id={`provider-${provider.id}`}
+                checked={provider.enabled}
+                onCheckedChange={() => toggleProvider(provider.id)}
+                className="data-[state=checked]:bg-primary"
+              />
+            </div>
           ))}
-        </Accordion>
+        </div>
       </div>
 
       <div className="sticky bottom-0 bg-background pt-2 p-4 border-t">
@@ -397,7 +347,7 @@ const ChatMultiAIContent = () => {
         <Textarea
           ref={textareaRef}
           placeholder="Type your prompt here..."
-          className="min-h-[50px] max-h-[200px] resize-none mb-2 focus-visible:ring-primary overflow-y-auto overflow-x-hidden"
+          className="min-h-[100px] max-h-[400px] resize-none mb-2 focus-visible:ring-primary overflow-y-auto overflow-x-hidden"
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {

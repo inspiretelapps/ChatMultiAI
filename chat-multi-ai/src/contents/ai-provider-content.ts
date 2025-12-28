@@ -6,7 +6,6 @@ export const config: PlasmoCSConfig = {
   matches: [
     "https://chatgpt.com/*",
     "https://grok.com/*",
-    "https://chat.deepseek.com/*",
     "https://claude.ai/*",
     "https://gemini.google.com/*"
   ],
@@ -16,6 +15,29 @@ export const config: PlasmoCSConfig = {
 
 // Track if we've already processed this page
 let processed = false
+const GROK_MESSAGE_SOURCE = "chatmultiai"
+const GROK_FILL_MESSAGE = "GROK_FILL_PROMPT"
+const GROK_SENT_MESSAGE = "GROK_PROMPT_SENT"
+
+const isGrokPage = window.location.hostname.includes("grok.com")
+
+// Set up message listener for Grok
+// The grok-main-world.ts is automatically injected by Plasmo with world: "MAIN"
+if (isGrokPage) {
+  // Listen for messages from the main-world script
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return
+    const data = event.data
+    if (!data || data.source !== GROK_MESSAGE_SOURCE) return
+    if (data.type === GROK_SENT_MESSAGE) {
+      chrome.runtime.sendMessage({ type: "PROMPT_SENT" }).catch((err) => {
+        console.log("Failed to notify background script that prompt was sent:", err)
+      })
+    }
+  })
+
+  console.log("ChatMultiAI: Grok content script loaded, main-world script is handled by Plasmo")
+}
 
 // Wait for the DOM to be fully loaded and interactive
 function waitForPageLoad() {
@@ -116,28 +138,17 @@ async function fillInputBox(prompt: string, autoSend: boolean = false, isFollowU
       }
     } 
     else if (domain.includes("grok.com")) {
-      // Grok input selector
-      const textarea = await waitForElement("textarea.w-full.bg-transparent.focus\\:outline-none.text-primary")
-      if (textarea instanceof HTMLTextAreaElement) {
-        textarea.value = prompt
-        textarea.style.height = "auto" // Reset height
-        textarea.dispatchEvent(new Event("input", { bubbles: true }))
-        // Trigger resize if needed
-        textarea.dispatchEvent(new Event("change", { bubbles: true }))
-        console.log("ChatMultiAI: Successfully filled Grok input")
-        
-        // Auto-submit only if autoSend is true
-        if (autoSend) {
-          const sendButton = await waitForElement("button[type='submit']")
-          if (sendButton instanceof HTMLButtonElement && !sendButton.disabled) {
-            sendButton.click()
-            console.log("ChatMultiAI: Auto-sent prompt to Grok")
-            promptWasSent = true
-          } else {
-            console.log("ChatMultiAI: Could not find or click send button for Grok")
-          }
-        }
-      }
+      // Grok requires main-world execution to update React state reliably.
+      console.log("ChatMultiAI: Posting Grok prompt to main world")
+      window.postMessage(
+        {
+          source: GROK_MESSAGE_SOURCE,
+          type: GROK_FILL_MESSAGE,
+          prompt,
+          autoSend
+        },
+        "*"
+      )
     }
     else if (domain.includes("gemini.google.com")) {
       // Gemini input selector
@@ -170,47 +181,33 @@ async function fillInputBox(prompt: string, autoSend: boolean = false, isFollowU
         }
       }
     }
-    else if (domain.includes("chat.deepseek.com")) {
-      // DeepSeek input selector
-      const textarea = await waitForElement("textarea#chat-input")
-      if (textarea instanceof HTMLTextAreaElement) {
-        textarea.value = prompt
-        textarea.dispatchEvent(new Event("input", { bubbles: true }))
-        console.log("ChatMultiAI: Successfully filled DeepSeek input")
-        
-        // Auto-submit only if autoSend is true
-        if (autoSend) {
-          const sendButton = await waitForElement("div[role='button'][aria-disabled='false']")
-          if (sendButton instanceof HTMLElement) {
-            sendButton.click()
-            console.log("ChatMultiAI: Auto-sent prompt to DeepSeek")
-            promptWasSent = true
-          } else {
-            console.log("ChatMultiAI: Could not find or click send button for DeepSeek")
-          }
-        }
-      }
-    }
     else if (domain.includes("claude.ai")) {
-      // Claude input selector
-      const contentEditableDiv = await waitForElement("div.ProseMirror[contenteditable='true']")
+      // Claude uses ProseMirror editor
+      const contentEditableDiv = await waitForElement("div.ProseMirror[contenteditable='true']") as HTMLElement
       if (contentEditableDiv) {
-        // Clear existing content
-        contentEditableDiv.innerHTML = ""
-        
-        // Create a paragraph element
-        const paragraph = document.createElement("p")
-        paragraph.textContent = prompt
-        
-        // Append the paragraph to the contenteditable div
-        contentEditableDiv.appendChild(paragraph)
-        
-        // Trigger input event
-        contentEditableDiv.dispatchEvent(new Event("input", { bubbles: true }))
+        // Focus the editor first
+        contentEditableDiv.focus()
+
+        // Wait a moment for focus to take effect
+        await new Promise(resolve => setTimeout(resolve, 50))
+
+        // Use execCommand to select all and replace - this properly updates ProseMirror state
+        // execCommand is the most reliable way to update contenteditable editors
+        document.execCommand('selectAll', false, undefined)
+        document.execCommand('insertText', false, prompt)
+
+        // Dispatch input event to notify any listeners
+        contentEditableDiv.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertText',
+          data: prompt
+        }))
+
         console.log("ChatMultiAI: Successfully filled Claude input")
-        
+
         // Auto-submit only if autoSend is true
         if (autoSend) {
+          await new Promise(resolve => setTimeout(resolve, 100))
           const sendButton = await waitForElement("button[type='button'][aria-label='Send Message']")
           if (sendButton instanceof HTMLButtonElement) {
             sendButton.click()
