@@ -1,10 +1,18 @@
 # ChatMultiAI
 Send prompts to multiple AI assistants at once
 
-[Chrome web store - ChatMultiAI](https://chromewebstore.google.com/detail/chatmultiai/jlmpfilkbghnodgcgdbkhebbllanpfbf?authuser=0&hl=en)
+## Install (Manual, from GitHub)
+1. Download the latest release ZIP from GitHub Releases: https://github.com/inspiretelapps/ChatMultiAI/releases
+2. Unzip the file.
+3. Open `chrome://extensions`.
+4. Enable **Developer mode** and click **Load unpacked**.
+5. Select the unzipped folder.
 
-![Screenshot 2025-04-01 at 16.20.36.png](images/Screenshot%202025-04-01%20at%2016.20.36.png)
-![Screenshot 2025-04-01 at 16.21.52.png](images/Screenshot%202025-04-01%20at%2016.21.52.png)
+**Release ZIP name:** The asset is published as `ChatMultiAI-extension.zip` in each GitHub Release.
+
+## Release Checklist (ZIP)
+1. Run `scripts/release-zip.sh` to build and package the ZIP.
+2. Publish a GitHub Release and upload `ChatMultiAI-extension.zip`.
 
 ## Recent Changes
 
