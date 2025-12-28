@@ -44,14 +44,20 @@
   "manifest": {
     "permissions": [
       "sidePanel",
-      "tabs"
+      "tabs",
+      "scripting"
     ],
     "host_permissions": [
       "https://chatgpt.com/*",
       "https://grok.com/*",
-      "https://chat.deepseek.com/*",
       "https://claude.ai/*",
       "https://gemini.google.com/*"
+    ],
+    "web_accessible_resources": [
+      {
+        "resources": ["grok-main-world.*.js"],
+        "matches": ["https://grok.com/*"]
+      }
     ]
   }
 }
