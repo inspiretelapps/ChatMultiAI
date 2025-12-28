@@ -13,8 +13,6 @@ export const config: PlasmoCSConfig = {
   run_at: "document_end"
 }
 
-// Track if we've already processed this page
-let processed = false
 const GROK_MESSAGE_SOURCE = "chatmultiai"
 const GROK_FILL_MESSAGE = "GROK_FILL_PROMPT"
 const GROK_SENT_MESSAGE = "GROK_PROMPT_SENT"
@@ -77,16 +75,21 @@ function waitForElement(selector: string, timeout = 10000): Promise<Element | nu
   })
 }
 
-// Function to fill the input box with prompt text and send it
-async function fillInputBox(prompt: string, autoSend: boolean = false, isFollowUp: boolean = false) {
-  // If this is a follow-up, don't check processed flag
-  // If not a follow-up and already processed, return
-  if (!isFollowUp && processed) return
-  
-  // Mark as processed (will be reset after completion if this is a follow-up)
-  processed = true
+async function waitForEnabledButton(selector: string, timeout = 10000, interval = 100): Promise<HTMLButtonElement | null> {
+  const startTime = Date.now()
+  while (Date.now() - startTime < timeout) {
+    const element = document.querySelector(selector)
+    if (element instanceof HTMLButtonElement && !element.disabled) {
+      return element
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval))
+  }
+  return null
+}
 
-  console.log("ChatMultiAI: Attempting to fill input box with prompt:", prompt, "autoSend:", autoSend, "isFollowUp:", isFollowUp)
+// Function to fill the input box with prompt text and send it
+async function fillInputBox(prompt: string, autoSend: boolean = false) {
+  console.log("ChatMultiAI: Attempting to fill input box with prompt:", prompt, "autoSend:", autoSend)
 
   try {
     // Different handling based on current domain
@@ -96,43 +99,43 @@ async function fillInputBox(prompt: string, autoSend: boolean = false, isFollowU
     if (domain.includes("chatgpt.com")) {
       // ChatGPT input selector
       const inputBox = await waitForElement("div[id='prompt-textarea']")
-      if (inputBox) {
-        // For contenteditable div
+      if (inputBox instanceof HTMLElement) {
+        // Prefer contenteditable div to keep ChatGPT state in sync.
         if (inputBox.getAttribute("contenteditable") === "true") {
-          inputBox.textContent = prompt
-          inputBox.dispatchEvent(new Event("input", { bubbles: true }))
+          inputBox.focus()
+          await new Promise(resolve => setTimeout(resolve, 50))
+          document.execCommand("selectAll", false, undefined)
+          document.execCommand("insertText", false, prompt)
+
+          inputBox.dispatchEvent(new InputEvent("input", {
+            bubbles: true,
+            inputType: "insertText",
+            data: prompt
+          }))
+
           console.log("ChatMultiAI: Successfully filled ChatGPT input")
-          
-          // Auto-submit only if autoSend is true
-          if (autoSend) {
-            const sendButton = await waitForElement("button[data-testid='send-button']")
-            if (sendButton instanceof HTMLButtonElement && !sendButton.disabled) {
-              sendButton.click()
-              console.log("ChatMultiAI: Auto-sent prompt to ChatGPT")
-              promptWasSent = true
-            } else {
-              console.log("ChatMultiAI: Could not find or click send button for ChatGPT")
-            }
-          }
         } else {
           // Fallback to find textarea
           const textarea = await waitForElement("div[data-testid='text-input-area'] textarea")
           if (textarea instanceof HTMLTextAreaElement) {
+            textarea.focus()
             textarea.value = prompt
             textarea.dispatchEvent(new Event("input", { bubbles: true }))
             console.log("ChatMultiAI: Successfully filled ChatGPT input (textarea)")
-            
-            // Auto-submit only if autoSend is true
-            if (autoSend) {
-              const sendButton = await waitForElement("button[data-testid='send-button']")
-              if (sendButton instanceof HTMLButtonElement && !sendButton.disabled) {
-                sendButton.click()
-                console.log("ChatMultiAI: Auto-sent prompt to ChatGPT")
-                promptWasSent = true
-              } else {
-                console.log("ChatMultiAI: Could not find or click send button for ChatGPT (textarea)")
-              }
-            }
+          }
+        }
+
+        // Auto-submit only if autoSend is true
+        if (autoSend) {
+          const sendButton = await waitForEnabledButton(
+            "button[data-testid='send-button'], button[aria-label='Send'], button[aria-label='Send message'], button[aria-label='Send Message']"
+          )
+          if (sendButton) {
+            sendButton.click()
+            console.log("ChatMultiAI: Auto-sent prompt to ChatGPT")
+            promptWasSent = true
+          } else {
+            console.log("ChatMultiAI: Could not find or click send button for ChatGPT")
           }
         }
       }
@@ -208,8 +211,10 @@ async function fillInputBox(prompt: string, autoSend: boolean = false, isFollowU
         // Auto-submit only if autoSend is true
         if (autoSend) {
           await new Promise(resolve => setTimeout(resolve, 100))
-          const sendButton = await waitForElement("button[type='button'][aria-label='Send Message']")
-          if (sendButton instanceof HTMLButtonElement) {
+          const sendButton = await waitForEnabledButton(
+            "button[type='button'][aria-label='Send message'], button[type='button'][aria-label='Send Message'], button[type='button'][aria-label='Send'], button[data-testid='send-button']"
+          )
+          if (sendButton) {
             sendButton.click()
             console.log("ChatMultiAI: Auto-sent prompt to Claude")
             promptWasSent = true
@@ -230,18 +235,8 @@ async function fillInputBox(prompt: string, autoSend: boolean = false, isFollowU
       })
     }
     
-    // Reset processed flag if this is a follow-up message
-    // This allows the page to process future follow-up messages
-    if (isFollowUp) {
-      processed = false
-      console.log("ChatMultiAI: Reset processed flag for future follow-ups")
-    }
   } catch (error) {
     console.error("ChatMultiAI: Error filling input box:", error)
-    // Reset processed flag on error to allow retry
-    if (isFollowUp) {
-      processed = false
-    }
   }
 }
 
@@ -252,8 +247,8 @@ async function main() {
   // Listen for messages from the sidepanel via the extension
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "FILL_PROMPT" && message.prompt) {
-      console.log("ChatMultiAI: Received FILL_PROMPT message:", message.prompt, "autoSend:", message.autoSend, "followUpMode:", message.followUpMode)
-      fillInputBox(message.prompt, message.autoSend, message.followUpMode)
+      console.log("ChatMultiAI: Received FILL_PROMPT message:", message.prompt, "autoSend:", message.autoSend)
+      fillInputBox(message.prompt, message.autoSend)
       sendResponse({ success: true })
     }
     return true // Keep the message channel open for async response

@@ -99,6 +99,7 @@ const ThemeToggle = () => {
 const ChatMultiAIContent = () => {
   const [prompt, setPrompt] = useState<string>("")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const initialTextareaHeightRef = useRef<number | null>(null)
   
   // Get theme information from next-themes
   const { theme, systemTheme } = useTheme()
@@ -221,18 +222,6 @@ const ChatMultiAIContent = () => {
     localStorage.setItem('chatmultiai_auto_send', JSON.stringify(autoSend))
   }, [autoSend])
   
-  // Add follow-up mode toggle with persistence
-  const [followUpMode, setFollowUpMode] = useState(() => {
-    // Load follow-up mode setting from localStorage
-    const saved = localStorage.getItem('chatmultiai_follow_up_mode')
-    return saved ? JSON.parse(saved) : false
-  })
-
-  // Save follow-up mode setting to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem('chatmultiai_follow_up_mode', JSON.stringify(followUpMode))
-  }, [followUpMode])
-  
   // Handle sending prompt to AI providers
   const handleSendPrompt = () => {
     if (!prompt.trim()) return
@@ -246,8 +235,7 @@ const ChatMultiAIContent = () => {
       type: "OPEN_AI_PROVIDERS",
       urls: enabledProviders.map(provider => provider.url),
       prompt: prompt,
-      autoSend: autoSend,
-      followUpMode: followUpMode // Add followUpMode setting to the message
+      autoSend: autoSend
     }, (response) => {
       if (response && response.success) {
         console.log("Successfully sent prompt to background script")
@@ -265,7 +253,12 @@ const ChatMultiAIContent = () => {
     if (!textareaRef.current) return
 
     const textarea = textareaRef.current
-    const minHeight = 100
+    if (initialTextareaHeightRef.current === null) {
+      const measuredHeight = textarea.getBoundingClientRect().height
+      initialTextareaHeightRef.current = measuredHeight > 0 ? measuredHeight : 100
+    }
+
+    const minHeight = Math.max(100, initialTextareaHeightRef.current)
     const maxHeight = 400
 
     // Store the current scroll position
@@ -319,17 +312,6 @@ const ChatMultiAIContent = () => {
         {/* Add toolbar */}
         <div className="flex items-center justify-end mb-2">
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <label htmlFor="follow-up" className="text-sm text-muted-foreground">
-                Follow-up Mode
-              </label>
-              <Switch
-                id="follow-up"
-                checked={followUpMode}
-                onCheckedChange={setFollowUpMode}
-                className="data-[state=checked]:bg-primary"
-              />
-            </div>
             <div className="flex items-center space-x-2">
               <label htmlFor="auto-send" className="text-sm text-muted-foreground">
                 Auto-send
