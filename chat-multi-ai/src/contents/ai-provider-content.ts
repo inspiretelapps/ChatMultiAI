@@ -7,7 +7,9 @@ export const config: PlasmoCSConfig = {
     "https://chatgpt.com/*",
     "https://grok.com/*",
     "https://claude.ai/*",
-    "https://gemini.google.com/*"
+    "https://gemini.google.com/*",
+    "https://www.perplexity.ai/*",
+    "https://perplexity.ai/*"
   ],
   // Run as soon as DOM is ready
   run_at: "document_end"
@@ -29,12 +31,17 @@ if (isGrokPage) {
     if (!data || data.source !== GROK_MESSAGE_SOURCE) return
     if (data.type === GROK_SENT_MESSAGE) {
       chrome.runtime.sendMessage({ type: "PROMPT_SENT" }).catch((err) => {
-        console.log("Failed to notify background script that prompt was sent:", err)
+        console.log(
+          "Failed to notify background script that prompt was sent:",
+          err
+        )
       })
     }
   })
 
-  console.log("ChatMultiAI: Grok content script loaded, main-world script is handled by Plasmo")
+  console.log(
+    "ChatMultiAI: Grok content script loaded, main-world script is handled by Plasmo"
+  )
 }
 
 // Wait for the DOM to be fully loaded and interactive
@@ -49,7 +56,10 @@ function waitForPageLoad() {
 }
 
 // Wait for a specific element to appear in the DOM
-function waitForElement(selector: string, timeout = 10000): Promise<Element | null> {
+function waitForElement(
+  selector: string,
+  timeout = 10000
+): Promise<Element | null> {
   return new Promise((resolve) => {
     if (document.querySelector(selector)) {
       return resolve(document.querySelector(selector))
@@ -75,7 +85,11 @@ function waitForElement(selector: string, timeout = 10000): Promise<Element | nu
   })
 }
 
-async function waitForEnabledButton(selector: string, timeout = 10000, interval = 100): Promise<HTMLButtonElement | null> {
+async function waitForEnabledButton(
+  selector: string,
+  timeout = 10000,
+  interval = 100
+): Promise<HTMLButtonElement | null> {
   const startTime = Date.now()
   while (Date.now() - startTime < timeout) {
     const element = document.querySelector(selector)
@@ -87,9 +101,112 @@ async function waitForEnabledButton(selector: string, timeout = 10000, interval 
   return null
 }
 
+function isVisible(element: HTMLElement): boolean {
+  const style = window.getComputedStyle(element)
+  const rect = element.getBoundingClientRect()
+
+  return (
+    style.display !== "none" &&
+    style.visibility !== "hidden" &&
+    rect.width > 0 &&
+    rect.height > 0
+  )
+}
+
+function findPerplexityInput(): HTMLElement | HTMLTextAreaElement | null {
+  const selectors = [
+    "#ask-input[contenteditable='true']",
+    "[contenteditable='true'][role='textbox']",
+    "[contenteditable='true']",
+    "[role='textbox']",
+    "textarea"
+  ]
+
+  for (const selector of selectors) {
+    const elements = Array.from(document.querySelectorAll(selector))
+    const input = elements.find(
+      (element): element is HTMLElement | HTMLTextAreaElement => {
+        return (
+          (element instanceof HTMLElement ||
+            element instanceof HTMLTextAreaElement) &&
+          isVisible(element)
+        )
+      }
+    )
+
+    if (input) return input
+  }
+
+  return null
+}
+
+function waitForPerplexityInput(
+  timeout = 10000
+): Promise<HTMLElement | HTMLTextAreaElement | null> {
+  return new Promise((resolve) => {
+    const existing = findPerplexityInput()
+    if (existing) return resolve(existing)
+
+    const observer = new MutationObserver(() => {
+      const found = findPerplexityInput()
+      if (found) {
+        observer.disconnect()
+        resolve(found)
+      }
+    })
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    })
+
+    setTimeout(() => {
+      observer.disconnect()
+      resolve(null)
+    }, timeout)
+  })
+}
+
+function findPerplexitySubmitButton(
+  input?: HTMLElement | HTMLTextAreaElement | null
+): HTMLButtonElement | null {
+  const submitSelectors = [
+    "button[aria-label='Submit']:not([disabled])",
+    "button[aria-label*='submit' i]:not([disabled])",
+    "button[type='submit']:not([disabled])"
+  ]
+
+  const containers = [
+    input?.closest("form"),
+    input?.closest("[role='form']"),
+    input?.parentElement,
+    document
+  ].filter(Boolean) as ParentNode[]
+
+  for (const container of containers) {
+    for (const selector of submitSelectors) {
+      const button = container.querySelector(selector)
+      if (
+        button instanceof HTMLButtonElement &&
+        !button.disabled &&
+        isVisible(button)
+      ) {
+        return button
+      }
+    }
+  }
+
+  return null
+}
+
 // Function to fill the input box with prompt text and send it
 async function fillInputBox(prompt: string, autoSend: boolean = false) {
-  console.log("ChatMultiAI: Attempting to fill input box with prompt:", prompt, "autoSend:", autoSend)
+  console.log(
+    "ChatMultiAI: Attempting to fill input box with prompt:",
+    prompt,
+    "autoSend:",
+    autoSend
+  )
 
   try {
     // Different handling based on current domain
@@ -103,25 +220,31 @@ async function fillInputBox(prompt: string, autoSend: boolean = false) {
         // Prefer contenteditable div to keep ChatGPT state in sync.
         if (inputBox.getAttribute("contenteditable") === "true") {
           inputBox.focus()
-          await new Promise(resolve => setTimeout(resolve, 50))
+          await new Promise((resolve) => setTimeout(resolve, 50))
           document.execCommand("selectAll", false, undefined)
           document.execCommand("insertText", false, prompt)
 
-          inputBox.dispatchEvent(new InputEvent("input", {
-            bubbles: true,
-            inputType: "insertText",
-            data: prompt
-          }))
+          inputBox.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              inputType: "insertText",
+              data: prompt
+            })
+          )
 
           console.log("ChatMultiAI: Successfully filled ChatGPT input")
         } else {
           // Fallback to find textarea
-          const textarea = await waitForElement("div[data-testid='text-input-area'] textarea")
+          const textarea = await waitForElement(
+            "div[data-testid='text-input-area'] textarea"
+          )
           if (textarea instanceof HTMLTextAreaElement) {
             textarea.focus()
             textarea.value = prompt
             textarea.dispatchEvent(new Event("input", { bubbles: true }))
-            console.log("ChatMultiAI: Successfully filled ChatGPT input (textarea)")
+            console.log(
+              "ChatMultiAI: Successfully filled ChatGPT input (textarea)"
+            )
           }
         }
 
@@ -135,12 +258,13 @@ async function fillInputBox(prompt: string, autoSend: boolean = false) {
             console.log("ChatMultiAI: Auto-sent prompt to ChatGPT")
             promptWasSent = true
           } else {
-            console.log("ChatMultiAI: Could not find or click send button for ChatGPT")
+            console.log(
+              "ChatMultiAI: Could not find or click send button for ChatGPT"
+            )
           }
         }
       }
-    } 
-    else if (domain.includes("grok.com")) {
+    } else if (domain.includes("grok.com")) {
       // Grok requires main-world execution to update React state reliably.
       console.log("ChatMultiAI: Posting Grok prompt to main world")
       window.postMessage(
@@ -152,25 +276,26 @@ async function fillInputBox(prompt: string, autoSend: boolean = false) {
         },
         "*"
       )
-    }
-    else if (domain.includes("gemini.google.com")) {
+    } else if (domain.includes("gemini.google.com")) {
       // Gemini input selector
-      const contentEditableDiv = await waitForElement("div.ql-editor[contenteditable='true']")
+      const contentEditableDiv = await waitForElement(
+        "div.ql-editor[contenteditable='true']"
+      )
       if (contentEditableDiv) {
         // Clear existing content
         contentEditableDiv.innerHTML = ""
-        
+
         // Create a paragraph element
         const paragraph = document.createElement("p")
         paragraph.textContent = prompt
-        
+
         // Append the paragraph to the contenteditable div
         contentEditableDiv.appendChild(paragraph)
-        
+
         // Trigger input event
         contentEditableDiv.dispatchEvent(new Event("input", { bubbles: true }))
         console.log("ChatMultiAI: Successfully filled Gemini input")
-        
+
         // Auto-submit only if autoSend is true
         if (autoSend) {
           const sendButton = await waitForElement("button.send-button")
@@ -179,38 +304,43 @@ async function fillInputBox(prompt: string, autoSend: boolean = false) {
             console.log("ChatMultiAI: Auto-sent prompt to Gemini")
             promptWasSent = true
           } else {
-            console.log("ChatMultiAI: Could not find or click send button for Gemini")
+            console.log(
+              "ChatMultiAI: Could not find or click send button for Gemini"
+            )
           }
         }
       }
-    }
-    else if (domain.includes("claude.ai")) {
+    } else if (domain.includes("claude.ai")) {
       // Claude uses ProseMirror editor
-      const contentEditableDiv = await waitForElement("div.ProseMirror[contenteditable='true']") as HTMLElement
+      const contentEditableDiv = (await waitForElement(
+        "div.ProseMirror[contenteditable='true']"
+      )) as HTMLElement
       if (contentEditableDiv) {
         // Focus the editor first
         contentEditableDiv.focus()
 
         // Wait a moment for focus to take effect
-        await new Promise(resolve => setTimeout(resolve, 50))
+        await new Promise((resolve) => setTimeout(resolve, 50))
 
         // Use execCommand to select all and replace - this properly updates ProseMirror state
         // execCommand is the most reliable way to update contenteditable editors
-        document.execCommand('selectAll', false, undefined)
-        document.execCommand('insertText', false, prompt)
+        document.execCommand("selectAll", false, undefined)
+        document.execCommand("insertText", false, prompt)
 
         // Dispatch input event to notify any listeners
-        contentEditableDiv.dispatchEvent(new InputEvent('input', {
-          bubbles: true,
-          inputType: 'insertText',
-          data: prompt
-        }))
+        contentEditableDiv.dispatchEvent(
+          new InputEvent("input", {
+            bubbles: true,
+            inputType: "insertText",
+            data: prompt
+          })
+        )
 
         console.log("ChatMultiAI: Successfully filled Claude input")
 
         // Auto-submit only if autoSend is true
         if (autoSend) {
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise((resolve) => setTimeout(resolve, 100))
           const sendButton = await waitForEnabledButton(
             "button[type='button'][aria-label='Send message'], button[type='button'][aria-label='Send Message'], button[type='button'][aria-label='Send'], button[data-testid='send-button']"
           )
@@ -219,22 +349,64 @@ async function fillInputBox(prompt: string, autoSend: boolean = false) {
             console.log("ChatMultiAI: Auto-sent prompt to Claude")
             promptWasSent = true
           } else {
-            console.log("ChatMultiAI: Could not find or click send button for Claude")
+            console.log(
+              "ChatMultiAI: Could not find or click send button for Claude"
+            )
+          }
+        }
+      }
+    } else if (domain.includes("perplexity.ai")) {
+      const input = await waitForPerplexityInput()
+      if (input) {
+        input.focus()
+        await new Promise((resolve) => setTimeout(resolve, 50))
+
+        if (input instanceof HTMLTextAreaElement) {
+          input.value = prompt
+          input.dispatchEvent(new Event("input", { bubbles: true }))
+        } else {
+          document.execCommand("selectAll", false, undefined)
+          document.execCommand("insertText", false, prompt)
+          input.dispatchEvent(
+            new InputEvent("input", {
+              bubbles: true,
+              inputType: "insertText",
+              data: prompt
+            })
+          )
+        }
+
+        console.log("ChatMultiAI: Successfully filled Perplexity input")
+
+        if (autoSend) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          const sendButton = findPerplexitySubmitButton(input)
+          if (sendButton) {
+            sendButton.click()
+            console.log("ChatMultiAI: Auto-sent prompt to Perplexity")
+            promptWasSent = true
+          } else {
+            console.log(
+              "ChatMultiAI: Could not find or click send button for Perplexity"
+            )
           }
         }
       }
     }
 
-
     // Notify background script that the prompt was sent (if autoSend is true)
     if (promptWasSent) {
-      chrome.runtime.sendMessage({
-        type: "PROMPT_SENT"
-      }).catch(err => {
-        console.log("Failed to notify background script that prompt was sent:", err)
-      })
+      chrome.runtime
+        .sendMessage({
+          type: "PROMPT_SENT"
+        })
+        .catch((err) => {
+          console.log(
+            "Failed to notify background script that prompt was sent:",
+            err
+          )
+        })
     }
-    
   } catch (error) {
     console.error("ChatMultiAI: Error filling input box:", error)
   }
@@ -243,11 +415,16 @@ async function fillInputBox(prompt: string, autoSend: boolean = false) {
 // Main execution
 async function main() {
   await waitForPageLoad()
-  
+
   // Listen for messages from the sidepanel via the extension
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "FILL_PROMPT" && message.prompt) {
-      console.log("ChatMultiAI: Received FILL_PROMPT message:", message.prompt, "autoSend:", message.autoSend)
+      console.log(
+        "ChatMultiAI: Received FILL_PROMPT message:",
+        message.prompt,
+        "autoSend:",
+        message.autoSend
+      )
       fillInputBox(message.prompt, message.autoSend)
       sendResponse({ success: true })
     }
@@ -255,4 +432,4 @@ async function main() {
   })
 }
 
-main() 
+main()
