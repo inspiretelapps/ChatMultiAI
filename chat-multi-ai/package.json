@@ -44,8 +44,7 @@
   "manifest": {
     "permissions": [
       "sidePanel",
-      "tabs",
-      "scripting"
+      "tabs"
     ],
     "host_permissions": [
       "https://chatgpt.com/*",

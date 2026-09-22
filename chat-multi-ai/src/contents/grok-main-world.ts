@@ -1,5 +1,7 @@
 import type { PlasmoCSConfig } from "plasmo"
 
+import { submitComposer } from "./composer"
+
 export const config: PlasmoCSConfig = {
   matches: ["https://grok.com/*"],
   run_at: "document_end",
@@ -8,6 +10,7 @@ export const config: PlasmoCSConfig = {
 
 const MESSAGE_SOURCE = "chatmultiai"
 const FILL_MESSAGE = "GROK_FILL_PROMPT"
+const FILL_ACK = "GROK_FILL_ACK"
 const SENT_MESSAGE = "GROK_PROMPT_SENT"
 
 // Log that the script is loaded
@@ -99,11 +102,6 @@ const waitForVisibleInput = (timeout = 15000): Promise<InputElement | null> => {
   })
 }
 
-// Keep old function for backwards compatibility
-const waitForVisibleTextarea = (timeout = 15000): Promise<HTMLTextAreaElement | null> => {
-  return waitForVisibleInput(timeout) as Promise<HTMLTextAreaElement | null>
-}
-
 const setNativeValue = (element: HTMLTextAreaElement, value: string) => {
   // Get the value setter from the element itself (may be overridden by React)
   const elementDescriptor = Object.getOwnPropertyDescriptor(element, "value")
@@ -173,52 +171,6 @@ const dispatchInputEvents = (element: HTMLTextAreaElement, value: string) => {
   } catch {
     // Ignore if not supported
   }
-}
-
-const findSubmitButton = (): HTMLButtonElement | null => {
-  // Try multiple selectors for the submit button
-  const selectors = [
-    'button[type="submit"]:not([disabled])',
-    'button[aria-label*="send" i]:not([disabled])',
-    'button[aria-label*="submit" i]:not([disabled])',
-    'button svg[class*="send" i]',
-    'form button:not([disabled])',
-    // Look for buttons with send icons or specific class names
-    'button[class*="send" i]:not([disabled])',
-    // Grok-specific: look for button near textarea
-    'div[class*="input"] button:not([disabled])',
-  ]
-
-  for (const selector of selectors) {
-    const button = document.querySelector(selector)
-    if (button) {
-      // If we found an SVG, get its parent button
-      if (button.tagName === 'svg') {
-        const parentButton = button.closest('button')
-        if (parentButton && !parentButton.disabled) {
-          return parentButton as HTMLButtonElement
-        }
-      } else if (button instanceof HTMLButtonElement) {
-        return button
-      }
-    }
-  }
-
-  // Fallback: find any enabled button in the form area
-  const textareas = document.querySelectorAll('textarea')
-  for (const textarea of textareas) {
-    const form = textarea.closest('form')
-    if (form) {
-      const buttons = form.querySelectorAll('button:not([disabled])')
-      for (const btn of buttons) {
-        if (btn instanceof HTMLButtonElement) {
-          return btn
-        }
-      }
-    }
-  }
-
-  return null
 }
 
 // Find React's onChange handler by traversing the fiber tree
@@ -541,49 +493,14 @@ const fillGrokPrompt = async (prompt: string, autoSend: boolean) => {
     return
   }
 
-  // Wait a bit more for the button to become enabled
-  await sleep(400)
-
-  const submitButton = findSubmitButton()
-  if (submitButton) {
-    console.log("ChatMultiAI: Found submit button, clicking")
-    submitButton.click()
-    window.postMessage({ source: MESSAGE_SOURCE, type: SENT_MESSAGE }, "*")
-  } else {
-    console.log("ChatMultiAI: Grok submit button not available, trying Enter key")
-
-    // Try pressing Enter to submit
-    const enterEvent = new KeyboardEvent("keydown", {
-      bubbles: true,
-      cancelable: true,
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13
-    })
-    inputElement.dispatchEvent(enterEvent)
-
-    await sleep(50)
-
-    inputElement.dispatchEvent(new KeyboardEvent("keyup", {
-      bubbles: true,
-      cancelable: true,
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13
-    }))
-
-    // Also try form submission
-    const form = inputElement.closest('form')
-    if (form) {
-      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-      console.log("ChatMultiAI: Dispatched form submit event")
-    }
-
+  const sent = await submitComposer(inputElement, prompt)
+  if (sent) {
     window.postMessage({ source: MESSAGE_SOURCE, type: SENT_MESSAGE }, "*")
   }
 }
+
+let lastPrompt = ""
+let lastPromptAt = 0
 
 window.addEventListener("message", (event) => {
   if (event.source !== window) return
@@ -594,5 +511,12 @@ window.addEventListener("message", (event) => {
   const autoSend = Boolean(data.autoSend)
   if (!prompt) return
 
-  fillGrokPrompt(prompt, autoSend)
+  window.postMessage({ source: MESSAGE_SOURCE, type: FILL_ACK }, "*")
+
+  const now = Date.now()
+  if (prompt === lastPrompt && now - lastPromptAt < 5000) return
+  lastPrompt = prompt
+  lastPromptAt = now
+
+  void fillGrokPrompt(prompt, autoSend)
 })
