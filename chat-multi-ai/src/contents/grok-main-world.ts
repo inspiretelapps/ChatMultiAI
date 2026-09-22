@@ -1,6 +1,6 @@
 import type { PlasmoCSConfig } from "plasmo"
 
-import { submitComposer } from "./composer"
+import { submitComposer } from "../lib/composer"
 
 export const config: PlasmoCSConfig = {
   matches: ["https://grok.com/*"],

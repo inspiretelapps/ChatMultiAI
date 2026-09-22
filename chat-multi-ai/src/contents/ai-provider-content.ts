@@ -4,7 +4,7 @@ import {
   fillComposer,
   submitComposer,
   waitForVisible
-} from "./composer"
+} from "../lib/composer"
 
 export const config: PlasmoCSConfig = {
   matches: [
